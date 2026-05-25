@@ -1,0 +1,5 @@
+# Backend
+backend/venv/
+backend/app/__pycache__/
+backend/.env
+backend/.pytest_cache/
