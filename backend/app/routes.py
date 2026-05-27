@@ -5,6 +5,9 @@ from .database import SessionLocal
 from .models import Comment
 from .schemas import CommentCreate
 
+from app.database import SessionLocal
+from app.schemas import CommentCreate, CommentResponse
+
 router = APIRouter()
 
 # 获取数据库连接
@@ -22,7 +25,8 @@ def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
     db_comment = Comment(
         platform=comment.platform,
         region=comment.region,
-        content=comment.content
+        content=comment.content,
+        topic=comment.topic
     )
 
     db.add(db_comment)

@@ -17,6 +17,6 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
-# DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# print(repr(DATABASE_URL))
+print(repr(DATABASE_URL))
