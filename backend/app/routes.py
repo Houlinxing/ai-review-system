@@ -7,6 +7,13 @@ from fastapi import Query
 from app.schemas import CommentResponse
 from app.ai import analyze_sentiment
 from sqlalchemy import func
+from openai import OpenAI
+import os
+
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
 
 router = APIRouter()
 
@@ -52,18 +59,11 @@ def get_comments(
 @router.get("/stats/{topic}")
 def get_topic_stats(topic: str, db: Session = Depends(get_db)):
 
-    total_comments = (
-        db.query(Comment)
-        .filter(Comment.topic == topic)
-        .count()
-    )
+    total_comments = (db.query(Comment).filter(Comment.topic == topic).count())
 
-    average_sentiment = (
-        db.query(func.avg(Comment.sentiment))
-        .filter(Comment.topic == topic)
-        .scalar()
-    )
-    
+    average_sentiment = (db.query(func.avg(
+        Comment.sentiment)).filter(Comment.topic == topic).scalar())
+
     if average_sentiment is None:
         average_sentiment = 0
 
@@ -72,3 +72,34 @@ def get_topic_stats(topic: str, db: Session = Depends(get_db)):
         "total_comments": total_comments,
         "average_sentiment": average_sentiment
     }
+
+@router.get("/summary/{topic}")
+def generate_summary(topic: str, db: Session = Depends(get_db)):
+
+    comments = db.query(Comment).filter(Comment.topic == topic).all()
+
+    if not comments:
+        return {"summary": "No comments found"}
+
+    all_comments = "\n".join([c.content for c in comments])
+
+    prompt = f"""
+    Summarize the main opinions from these comments:
+
+    {all_comments}
+
+    Give short bullet points.
+    """
+
+    completion = client.chat.completions.create(
+        model="minimaxai/minimax-m2.7",
+        messages=[{
+            "role": "user",
+            "content": prompt
+        }],
+        temperature=0.5,
+        max_tokens=300)
+
+    summary = completion.choices[0].message.content
+
+    return {"topic": topic, "summary": summary}
