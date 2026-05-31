@@ -6,8 +6,8 @@ client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1"
 )
 
-
 def analyze_sentiment(text: str) -> float:
+
     response = client.chat.completions.create(
         model="minimaxai/minimax-m2.7",
         messages=[
@@ -22,6 +22,6 @@ def analyze_sentiment(text: str) -> float:
         ]
     )
 
-    result = response.choices[0].message.content
-
-    return float(result)
+    return float(
+        response.choices[0].message.content
+    )

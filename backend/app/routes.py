@@ -5,15 +5,9 @@ from .models import Comment
 from .schemas import CommentCreate
 from fastapi import Query
 from app.schemas import CommentResponse
-from app.ai import analyze_sentiment
 from sqlalchemy import func
-from openai import OpenAI
-import os
-
-client = OpenAI(
-    base_url="https://integrate.api.nvidia.com/v1",
-    api_key=os.getenv("NVIDIA_API_KEY")
-)
+from app.services.sentiment_service import analyze_sentiment
+from app.services.ai_service import generate_summary
 
 router = APIRouter()
 
@@ -74,32 +68,27 @@ def get_topic_stats(topic: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/summary/{topic}")
-def generate_summary(topic: str, db: Session = Depends(get_db)):
+def generate_summary_route(
+    topic: str,
+    db: Session = Depends(get_db)
+):
 
-    comments = db.query(Comment).filter(Comment.topic == topic).all()
+    comments = (
+        db.query(Comment)
+        .filter(Comment.topic == topic)
+        .all()
+    )
 
     if not comments:
-        return {"summary": "No comments found"}
+        return {
+            "summary": "No comments found"
+        }
 
-    all_comments = "\n".join([c.content for c in comments])
+    summary = generate_summary(
+        [c.content for c in comments]
+    )
 
-    prompt = f"""
-    Summarize the main opinions from these comments:
-
-    {all_comments}
-
-    Give short bullet points.
-    """
-
-    completion = client.chat.completions.create(
-        model="minimaxai/minimax-m2.7",
-        messages=[{
-            "role": "user",
-            "content": prompt
-        }],
-        temperature=0.5,
-        max_tokens=300)
-
-    summary = completion.choices[0].message.content
-
-    return {"topic": topic, "summary": summary}
+    return {
+        "topic": topic,
+        "summary": summary
+    }
