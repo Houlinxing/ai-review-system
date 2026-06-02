@@ -1,5 +1,14 @@
 from pydantic import BaseModel
 from datetime import datetime
+from pydantic import BaseModel
+from pydantic import BaseModel
+
+
+class YouTubeImportRequest(
+    BaseModel
+):
+    video_id: str
+    topic: str
 
 class CommentCreate(BaseModel):
     platform: str

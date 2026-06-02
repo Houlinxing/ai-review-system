@@ -170,5 +170,3 @@ Author
 Hou Linxing
 
 AI Review System — Opinion Intelligence Platform
-# ai-review-system
->>>>>>> ff4eccb064d05f059916a40b7136661db349a839

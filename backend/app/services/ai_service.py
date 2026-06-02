@@ -6,28 +6,32 @@ client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1"
 )
 
-def generate_summary(comments: list[str]):
 
-    all_comments = "\n".join(comments)
+def generate_summary(comments: list[str]) -> str:
+
+    if not comments:
+        return "No comments available"
 
     prompt = f"""
-    Summarize the main opinions from these comments:
+Summarize the main opinions:
 
-    {all_comments}
+{comments}
 
-    Give short bullet points.
-    """
+Return bullet points.
+"""
 
-    completion = client.chat.completions.create(
-        model="minimaxai/minimax-m2.7",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.5,
-        max_tokens=300
-    )
+    try:
+        response = client.chat.completions.create(
+            model="minimaxai/minimax-m2.7",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=300
+        )
 
-    return completion.choices[0].message.content
+        summary = response.choices[0].message.content
+
+        return summary or "No summary available"
+
+    except Exception as e:
+        print("AI error:", e)
+        return "Summary generation failed"

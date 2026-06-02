@@ -70,6 +70,11 @@ function App() {
 
 const animateSummary = (text) => {
 
+  if (!text || typeof text !== "string") {
+    setSummary("No summary available");
+    return;
+  }
+
   setSummary("");
 
   let index = 0;

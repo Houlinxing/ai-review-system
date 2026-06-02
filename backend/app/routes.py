@@ -1,17 +1,28 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from .database import SessionLocal
-from .models import Comment
-from .schemas import CommentCreate
-from fastapi import Query
-from app.schemas import CommentResponse
 from sqlalchemy import func
-from app.services.sentiment_service import analyze_sentiment
+
+from app.database import SessionLocal
+from app.models import Comment
+from app.schemas import (
+    CommentCreate,
+    CommentResponse,
+    YouTubeImportRequest
+)
+
+from app.services.sentiment_service import (
+    analyze_sentiment,
+    analyze_sentiments_batch
+)
+
 from app.services.ai_service import generate_summary
+from app.crawlers.youtube_crawler import get_youtube_comments
+
+from app.core.response import success, error
 
 router = APIRouter()
 
-# 获取数据库连接
+
 def get_db():
     db = SessionLocal()
     try:
@@ -19,76 +30,118 @@ def get_db():
     finally:
         db.close()
 
-# 创建评论
+
+# -------------------------
+# create comment
+# -------------------------
 @router.post("/comments")
 def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
-    sentiment_score = analyze_sentiment(comment.content)
+
+    sentiment = analyze_sentiment(comment.content)
 
     db_comment = Comment(
         platform=comment.platform,
         region=comment.region,
         content=comment.content,
         topic=comment.topic,
-        sentiment=sentiment_score
+        sentiment=sentiment
     )
 
     db.add(db_comment)
     db.commit()
     db.refresh(db_comment)
 
-    return db_comment
+    return success(db_comment)
 
-# 获取评论
+
+# -------------------------
+# get comments
+# -------------------------
 @router.get("/comments", response_model=list[CommentResponse])
-def get_comments(
-    topic: str | None = Query(default=None),
-    db: Session = Depends(get_db)
-):
+def get_comments(topic: str | None = Query(default=None), db: Session = Depends(get_db)):
+
     query = db.query(Comment)
+
     if topic:
         query = query.filter(Comment.topic == topic)
 
     return query.all()
 
+
+# -------------------------
+# stats
+# -------------------------
 @router.get("/stats/{topic}")
-def get_topic_stats(topic: str, db: Session = Depends(get_db)):
+def get_stats(topic: str, db: Session = Depends(get_db)):
 
-    total_comments = (db.query(Comment).filter(Comment.topic == topic).count())
+    total = db.query(Comment).filter(Comment.topic == topic).count()
 
-    average_sentiment = (db.query(func.avg(
-        Comment.sentiment)).filter(Comment.topic == topic).scalar())
+    avg = db.query(func.avg(Comment.sentiment)).filter(
+        Comment.topic == topic
+    ).scalar()
 
-    if average_sentiment is None:
-        average_sentiment = 0
-
-    return {
+    return success({
         "topic": topic,
-        "total_comments": total_comments,
-        "average_sentiment": average_sentiment
-    }
+        "total_comments": total,
+        "average_sentiment": float(avg or 0)
+    })
 
+
+# -------------------------
+# summary
+# -------------------------
 @router.get("/summary/{topic}")
-def generate_summary_route(
-    topic: str,
-    db: Session = Depends(get_db)
-):
+def summary(topic: str, db: Session = Depends(get_db)):
 
-    comments = (
-        db.query(Comment)
-        .filter(Comment.topic == topic)
-        .all()
-    )
+    comments = db.query(Comment).filter(Comment.topic == topic).all()
 
     if not comments:
-        return {
+        return success({
+            "topic": topic,
             "summary": "No comments found"
-        }
+        })
 
-    summary = generate_summary(
-        [c.content for c in comments]
-    )
+    summary_text = generate_summary([c.content for c in comments])
 
-    return {
+    return success({
         "topic": topic,
-        "summary": summary
-    }
+        "summary": summary_text
+    })
+
+
+# -------------------------
+# youtube crawler
+# -------------------------
+@router.post("/crawl/youtube")
+def crawl_youtube(request: YouTubeImportRequest, db: Session = Depends(get_db)):
+
+    try:
+        comments = get_youtube_comments(request.video_id, max_results=20)
+
+        if not comments:
+            return error("No comments found")
+
+        sentiments = analyze_sentiments_batch(comments)
+
+        db_objects = [
+            Comment(
+                platform="youtube",
+                region="unknown",
+                content=text,
+                topic=request.topic,
+                sentiment=sentiment
+            )
+            for text, sentiment in zip(comments, sentiments)
+        ]
+
+        db.bulk_save_objects(db_objects)
+        db.commit()
+
+        return success({
+            "topic": request.topic,
+            "imported": len(db_objects)
+        })
+
+    except Exception as e:
+        print("crawl error:", e)
+        return error(str(e))
