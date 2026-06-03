@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-
 from app.database import SessionLocal
 from app.models import Comment
 from app.schemas import (
@@ -15,9 +14,11 @@ from app.services.sentiment_service import (
     analyze_sentiments_batch
 )
 
-from app.services.ai_service import generate_summary
-from app.crawlers.youtube_crawler import get_youtube_comments
+from app.services.youtube_service import (
+    get_clean_youtube_comments
+)
 
+from app.services.ai_service import generate_summary
 from app.core.response import success, error
 
 router = APIRouter()
@@ -116,13 +117,19 @@ def summary(topic: str, db: Session = Depends(get_db)):
 def crawl_youtube(request: YouTubeImportRequest, db: Session = Depends(get_db)):
 
     try:
-        comments = get_youtube_comments(request.video_id, max_results=20)
+        comments = get_clean_youtube_comments(
+            request.video_id,
+            max_results=20
+        )
 
         if not comments:
-            return error("No comments found")
+            return error("No valid comments found")
 
-        sentiments = analyze_sentiments_batch(comments)
+        sentiments = analyze_sentiments_batch(
+            comments
+        )
 
+        # 存清洗后的评论
         db_objects = [
             Comment(
                 platform="youtube",
@@ -131,8 +138,11 @@ def crawl_youtube(request: YouTubeImportRequest, db: Session = Depends(get_db)):
                 topic=request.topic,
                 sentiment=sentiment
             )
-            for text, sentiment in zip(comments, sentiments)
-        ]
+            for text, sentiment in zip(
+                comments,
+                sentiments
+            )
+            ]
 
         db.bulk_save_objects(db_objects)
         db.commit()
