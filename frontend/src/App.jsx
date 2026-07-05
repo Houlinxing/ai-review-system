@@ -33,38 +33,37 @@ function App() {
     },
   ];
 
- const searchTopic = async () => {
+const searchTopic = async () => {
+  if (!topic.trim()) return;
 
   setLoading(true);
+  setSummary("");
+  setStats(null);
+  setComments([]);
 
   try {
+    // 第一步：触发抓取（后端自动判断缓存，有缓存直接跳过抓取）
+    await axios.post("http://127.0.0.1:8000/crawl/youtube/keyword", {
+      keyword: topic.trim(),
+      max_videos: 3,
+      max_results_per_video: 20,
+    });
 
-    const statsRes = await axios.get(
-      `http://127.0.0.1:8000/stats/${topic}`
-    );
+    // 第二步：拿分析结果（并行请求，加快速度）
+    const [statsRes, commentsRes, summaryRes] = await Promise.all([
+      axios.get(`http://127.0.0.1:8000/stats/${topic.trim()}`),
+      axios.get(`http://127.0.0.1:8000/comments?topic=${topic.trim()}`),
+      axios.get(`http://127.0.0.1:8000/summary/${topic.trim()}`),
+    ]);
 
-    const commentsRes = await axios.get(
-      `http://127.0.0.1:8000/comments?topic=${topic}`
-    );
-
-    const summaryRes = await axios.get(
-      `http://127.0.0.1:8000/summary/${topic}`
-    );
-
-    setStats(statsRes.data);
-
+    setStats(statsRes.data.data);
     setComments(commentsRes.data);
-
-    animateSummary(summaryRes.data.summary);
+    animateSummary(summaryRes.data.data.summary);
 
   } catch (error) {
-
-    console.error(error);
-
+    console.error("搜索失败:", error);
   } finally {
-
     setLoading(false);
-
   }
 };
 
@@ -446,6 +445,7 @@ const animateSummary = (text) => {
             onChange={(e) =>
               setTopic(e.target.value)
             }
+            onKeyDown={(e) => e.key === "Enter" && !loading && searchTopic()}
           />
 
           <button
@@ -467,9 +467,21 @@ const animateSummary = (text) => {
                   Topic
                 </div>
 
-                <div className="value">
-                  {stats.topic}
-                </div>
+                  <div
+                    className="value"
+                    style={{
+                      fontSize: stats.topic.length > 10
+                        ? stats.topic.length > 20
+                          ? "1.2rem"
+                          : "1.6rem"
+                        : "2.1rem",
+                      lineHeight: 1.3,
+                      wordBreak: "break-word",
+                      letterSpacing: "-0.5px",
+                    }}
+                  >
+                    {stats.topic}
+                  </div>
               </div>
 
               <div className="card">
