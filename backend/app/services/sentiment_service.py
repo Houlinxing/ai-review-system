@@ -1,60 +1,104 @@
-from openai import OpenAI
-import os
-import json
+from transformers import pipeline
+from functools import lru_cache
+from typing import List
+import logging
 
-client = OpenAI(
-    api_key=os.getenv("NVIDIA_API_KEY"),
-    base_url="https://integrate.api.nvidia.com/v1"
-)
+logger = logging.getLogger(__name__)
+
+BATCH_SIZE = 16
 
 
+# =================================================
+# 1. 模型单例（只加载一次）
+# =================================================
+@lru_cache(maxsize=1)
+def get_sentiment_pipeline():
+    return pipeline(
+        "sentiment-analysis",
+        model="cardiffnlp/twitter-xlm-roberta-base-sentiment",
+        device=-1,
+        truncation=True,
+        max_length=128
+    )
+
+
+# =================================================
+# 2. 统一分数映射
+# =================================================
+def score_from(r: dict) -> float:
+    label = r["label"].lower()
+    score = float(r["score"])
+
+    if "pos" in label:
+        return score
+    elif "neg" in label:
+        return -score
+    return 0.0
+
+
+# =================================================
+# 3. 单条（API用）
+# =================================================
 def analyze_sentiment(text: str) -> float:
-
-    if not text:
+    if not text or not text.strip():
         return 0.0
 
     try:
-        result = analyze_sentiments_batch([text])
-        return result[0] if result else 0.0
+        pipe = get_sentiment_pipeline()
+        result = pipe(text.strip())[0]
+        return score_from(result)
 
-    except Exception:
+    except Exception as e:
+        logger.warning(f"single sentiment error: {e}")
         return 0.0
 
 
-def analyze_sentiments_batch(comments: list[str]):
+# =================================================
+# 4. 批量（核心 crawler 用）
+# =================================================
+def analyze_sentiments_batch(comments: List[str]) -> List[float]:
 
     if not comments:
         return []
 
-    prompt = f"""
-Return JSON only:
+    pipe = get_sentiment_pipeline()
 
-[
-  {{"sentiment": 0.1}}
-]
+    results = [0.0] * len(comments)
 
-Comments:
-{json.dumps(comments, ensure_ascii=False)}
-"""
+    valid_indices = []
+    valid_texts = []
 
-    try:
-        response = client.chat.completions.create(
-            model="minimaxai/minimax-m2.7",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=800
-        )
+    # -----------------------------
+    # 收集有效数据（保持索引）
+    # -----------------------------
+    for i, text in enumerate(comments):
+        if text and text.strip():
+            valid_indices.append(i)
+            valid_texts.append(text.strip())
 
-        content = response.choices[0].message.content.strip()
-        content = content.replace("```json", "").replace("```", "").strip()
+    # -----------------------------
+    # batch 推理
+    # -----------------------------
+    for start in range(0, len(valid_texts), BATCH_SIZE):
 
-        result = json.loads(content)
+        batch_texts = valid_texts[start:start + BATCH_SIZE]
+        batch_indices = valid_indices[start:start + BATCH_SIZE]
 
-        return [
-            float(item.get("sentiment", 0))
-            for item in result
-        ]
+        try:
+            outputs = pipe(batch_texts)
 
-    except Exception as e:
-        print("Batch sentiment error:", e)
-        return [0.0] * len(comments)
+            for idx, r in zip(batch_indices, outputs):
+                results[idx] = score_from(r)
+
+        except Exception as e:
+            logger.warning(f"batch error: {e}")
+
+            # fallback：逐条
+            for idx, t in zip(batch_indices, batch_texts):
+                try:
+                    r = pipe(t)[0]
+                    results[idx] = score_from(r)
+                except:
+                    results[idx] = 0.0
+
+    return results
