@@ -22,6 +22,7 @@ from app.services.youtube_service import (
 from app.services.sentiment_service import analyze_sentiment, analyze_sentiments_batch
 from app.services.ai_service import generate_summary
 from app.core.response import success, error
+from app.services.ai_service import generate_summary, _empty_summary
 
 router = APIRouter()
 
@@ -59,6 +60,34 @@ def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
     )
     return success(db_comment)
 
+#新增趋势接口
+@router.get("/trend/{topic}")
+def get_trend(topic: str, db: Session = Depends(get_db)):
+    from sqlalchemy import func, cast, Date
+
+    rows = (
+        db.query(
+            cast(Comment.published_at, Date).label("date"),
+            func.avg(Comment.sentiment).label("avg_sentiment"),
+            func.count(Comment.id).label("count")
+        )
+        .filter(
+            Comment.topic == topic,
+            Comment.published_at.isnot(None)
+        )
+        .group_by(cast(Comment.published_at, Date))
+        .order_by(cast(Comment.published_at, Date))
+        .all()
+    )
+
+    return success([
+        {
+            "date": str(row.date),
+            "avg_sentiment": round(float(row.avg_sentiment), 3),
+            "count": row.count
+        }
+        for row in rows
+    ])
 
 # -------------------------
 # get comments
@@ -93,20 +122,28 @@ def summary(topic: str, db: Session = Depends(get_db)):
     )
 
     if not comments:
-        return success({"topic": topic, "summary": "No comments available"})
+        return success({"topic": topic, "summary": _empty_summary()})
 
     comment_texts = [c.content for c in comments]
 
     try:
-        summary_text = generate_summary(comment_texts)
-        if not summary_text or summary_text.lower() in ("none", "no summary available"):
-            summary_text = "No summary available"
+        # 传入 topic 给 AI 做上下文参考
+        summary_data = generate_summary(comment_texts, topic=topic)
     except Exception as e:
         print("Summary generation error:", e)
-        summary_text = "Summary generation failed"
+        summary_data = {
+            "verdict":        "中立",
+            "verdict_reason": "",
+            "pros":           [],
+            "cons":           [],
+            "tips":           [],
+            "summary":        "Summary generation failed",
+        }
 
-    return success({"topic": topic, "summary": summary_text})
-
+    return success({
+        "topic":   topic,
+        "summary": summary_data  # 现在是 dict，不是字符串
+    })
 
 # -------------------------
 # youtube 单视频抓取
