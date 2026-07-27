@@ -3,29 +3,28 @@ from app.crawlers.youtube_crawler import (
     search_youtube_videos
 )
 from app.utils.text_cleaner import clean_text
-import logging
 
-logger = logging.getLogger(__name__)
+from app.core.logger import setup_logger
+logger = setup_logger(__name__)
 
 
 def get_clean_youtube_comments(
     video_id: str,
     max_results: int = 20
 ) -> list[dict]:
-    """
-    抓取单个视频的评论并清洗
-    """
     raw_comments = get_youtube_comments(
         video_id,
         max_results=max_results
     )
 
     clean_comments = []
+    skipped = 0  # ← 记录过滤数量
 
     for comment in raw_comments:
         cleaned_content = clean_text(comment["content"])
 
         if len(cleaned_content.strip()) < 5:
+            skipped += 1  # ← 计数
             continue
 
         clean_comments.append({
@@ -36,8 +35,10 @@ def get_clean_youtube_comments(
             "published_at": comment["published_at"],
         })
 
-    return clean_comments
+    # ← 加这一行
+    logger.info(f"video={video_id} raw={len(raw_comments)} clean={len(clean_comments)} skipped={skipped}")
 
+    return clean_comments
 
 def get_comments_by_keyword(
     keyword: str,

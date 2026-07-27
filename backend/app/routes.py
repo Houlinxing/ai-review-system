@@ -7,7 +7,7 @@ from app.schemas import (
     CommentCreate,
     CommentResponse,
     YouTubeImportRequest,
-    YouTubeKeywordRequest  # ← 新增
+    YouTubeKeywordRequest
 )
 from app.services.comment_service import (
     create_comment as create_comment_service,
@@ -17,12 +17,14 @@ from app.services.comment_service import (
 )
 from app.services.youtube_service import (
     get_clean_youtube_comments,
-    get_comments_by_keyword  # ← 新增
+    get_comments_by_keyword
 )
 from app.services.sentiment_service import analyze_sentiment, analyze_sentiments_batch
-from app.services.ai_service import generate_summary
-from app.core.response import success, error
 from app.services.ai_service import generate_summary, _empty_summary
+from app.core.response import success, error
+from app.core.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 router = APIRouter()
 
@@ -60,7 +62,10 @@ def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
     )
     return success(db_comment)
 
-#新增趋势接口
+
+# -------------------------
+# 趋势接口
+# -------------------------
 @router.get("/trend/{topic}")
 def get_trend(topic: str, db: Session = Depends(get_db)):
     from sqlalchemy import func, cast, Date
@@ -88,6 +93,7 @@ def get_trend(topic: str, db: Session = Depends(get_db)):
         }
         for row in rows
     ])
+
 
 # -------------------------
 # get comments
@@ -127,10 +133,9 @@ def summary(topic: str, db: Session = Depends(get_db)):
     comment_texts = [c.content for c in comments]
 
     try:
-        # 传入 topic 给 AI 做上下文参考
         summary_data = generate_summary(comment_texts, topic=topic)
     except Exception as e:
-        print("Summary generation error:", e)
+        logger.error(f"summary generation error: {e}", exc_info=True)
         summary_data = {
             "verdict":        "中立",
             "verdict_reason": "",
@@ -140,10 +145,8 @@ def summary(topic: str, db: Session = Depends(get_db)):
             "summary":        "Summary generation failed",
         }
 
-    return success({
-        "topic":   topic,
-        "summary": summary_data  # 现在是 dict，不是字符串
-    })
+    return success({"topic": topic, "summary": summary_data})
+
 
 # -------------------------
 # youtube 单视频抓取
@@ -154,7 +157,6 @@ def crawl_youtube(
     db: Session = Depends(get_db)
 ):
     try:
-        # 先查这个 video_id 有没有缓存
         existing_count = (
             db.query(Comment)
             .filter(Comment.video_id == request.video_id)
@@ -162,6 +164,7 @@ def crawl_youtube(
         )
 
         if existing_count >= 10:
+            logger.info(f"cache hit: video_id={request.video_id} count={existing_count}")
             return success({
                 "topic":      request.topic,
                 "fetched":    0,
@@ -199,6 +202,7 @@ def crawl_youtube(
         ]
 
         imported = _upsert_comments(db, db_objects)
+        logger.info(f"youtube crawl done: topic={request.topic} fetched={len(db_objects)} imported={imported}")
 
         return success({
             "topic":      request.topic,
@@ -209,7 +213,7 @@ def crawl_youtube(
         })
 
     except Exception as e:
-        print("crawl error:", e)
+        logger.error(f"crawl error: {e}", exc_info=True)
         return error(str(e))
 
 
@@ -222,24 +226,22 @@ def crawl_youtube_by_keyword(
     db: Session = Depends(get_db)
 ):
     try:
-        # 1. 先查数据库有没有这个关键词的缓存数据
         existing_count = (
             db.query(Comment)
             .filter(Comment.topic == request.keyword)
             .count()
         )
 
-        # 已有足够数据，直接返回缓存
         if existing_count >= 10:
+            logger.info(f"cache hit: keyword={request.keyword} count={existing_count}")
             return success({
                 "keyword":    request.keyword,
                 "fetched":    0,
                 "imported":   0,
                 "skipped":    existing_count,
-                "from_cache": True   # 告诉前端这是缓存数据
+                "from_cache": True
             })
 
-        # 2. 没有数据才实时抓取
         result = get_comments_by_keyword(
             keyword=request.keyword,
             max_videos=request.max_videos,
@@ -252,11 +254,9 @@ def crawl_youtube_by_keyword(
         if not comments:
             return error("No valid comments found")
 
-        # 3. 情感分析
         texts      = [c["content"] for c in comments]
         sentiments = analyze_sentiments_batch(texts)
 
-        # 4. 构建 Comment 对象
         db_objects = [
             Comment(
                 platform="youtube",
@@ -275,8 +275,8 @@ def crawl_youtube_by_keyword(
             for comment, score in zip(comments, sentiments)
         ]
 
-        # 5. 去重写入
         imported = _upsert_comments(db, db_objects)
+        logger.info(f"keyword crawl done: keyword={request.keyword} fetched={len(db_objects)} imported={imported}")
 
         return success({
             "keyword":    request.keyword,
@@ -284,12 +284,13 @@ def crawl_youtube_by_keyword(
             "fetched":    len(db_objects),
             "imported":   imported,
             "skipped":    len(db_objects) - imported,
-            "from_cache": False  # 告诉前端这是新抓取的数据
+            "from_cache": False
         })
 
     except Exception as e:
-        print("keyword crawl error:", e)
+        logger.error(f"keyword crawl error: {e}", exc_info=True)
         return error(str(e))
+
 
 # -------------------------
 # 去重写入（共用）
