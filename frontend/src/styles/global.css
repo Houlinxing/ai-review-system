@@ -216,3 +216,12 @@ body {
 
 .positive { color: #22c55e; }
 .negative { color: #ef4444; }
+
+.stats-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;      /* 水平居中 */
+  justify-content: center;  /* 垂直居中 */
+  text-align: center;
+  min-height: 140px;        /* 统一最小高度，防止高度差异 */
+}
