@@ -7,7 +7,9 @@ from app.schemas import (
     CommentCreate,
     CommentResponse,
     YouTubeImportRequest,
-    YouTubeKeywordRequest
+    YouTubeKeywordRequest,
+    BilibiliImportRequest,      # ← 新增
+    BilibiliKeywordRequest      # ← 新增
 )
 from app.services.comment_service import (
     create_comment as create_comment_service,
@@ -18,6 +20,10 @@ from app.services.comment_service import (
 from app.services.youtube_service import (
     get_clean_youtube_comments,
     get_comments_by_keyword
+)
+from app.services.bilibili_service import (        # ← 新增
+    get_clean_bilibili_comments,
+    get_bilibili_comments_by_keyword
 )
 from app.services.sentiment_service import analyze_sentiment, analyze_sentiments_batch
 from app.services.ai_service import generate_summary, _empty_summary
@@ -289,6 +295,151 @@ def crawl_youtube_by_keyword(
 
     except Exception as e:
         logger.error(f"keyword crawl error: {e}", exc_info=True)
+        return error(str(e))
+
+
+# -------------------------
+# B站 单视频抓取
+# -------------------------
+@router.post("/crawl/bilibili")
+def crawl_bilibili(
+    request: BilibiliImportRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        existing_count = (
+            db.query(Comment)
+            .filter(Comment.video_id == request.bvid)
+            .count()
+        )
+
+        if existing_count >= 10:
+            logger.info(f"cache hit: bvid={request.bvid} count={existing_count}")
+            return success({
+                "topic":      request.topic,
+                "fetched":    0,
+                "imported":   0,
+                "skipped":    existing_count,
+                "from_cache": True
+            })
+
+        comments = get_clean_bilibili_comments(
+            request.bvid,
+            max_results=20
+        )
+        if not comments:
+            return error("No valid comments found")
+
+        texts      = [c["content"] for c in comments]
+        sentiments = analyze_sentiments_batch(texts)
+
+        db_objects = [
+            Comment(
+                platform="bilibili",
+                video_id=request.bvid,
+                comment_id=comment["comment_id"],
+                topic=request.topic,
+                content=comment["content"],
+                like_count=comment["like_count"],
+                reply_count=comment["reply_count"],
+                published_at=comment["published_at"],
+                sentiment=score,
+                sentiment_label=sentiment_label(score),
+                region=None,
+                language=None,
+            )
+            for comment, score in zip(comments, sentiments)
+        ]
+
+        imported = _upsert_comments(db, db_objects)
+        logger.info(f"bilibili crawl done: topic={request.topic} fetched={len(db_objects)} imported={imported}")
+
+        return success({
+            "topic":      request.topic,
+            "fetched":    len(db_objects),
+            "imported":   imported,
+            "skipped":    len(db_objects) - imported,
+            "from_cache": False
+        })
+
+    except Exception as e:
+        logger.error(f"bilibili crawl error: {e}", exc_info=True)
+        return error(str(e))
+
+
+# -------------------------
+# B站 关键词搜索抓取
+# -------------------------
+@router.post("/crawl/bilibili/keyword")
+def crawl_bilibili_by_keyword(
+    request: BilibiliKeywordRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        existing_count = (
+            db.query(Comment)
+            .filter(Comment.topic == request.keyword)
+            .filter(Comment.platform == "bilibili")
+            .count()
+        )
+
+        if existing_count >= 10:
+            logger.info(f"cache hit: keyword={request.keyword} count={existing_count}")
+            return success({
+                "keyword":    request.keyword,
+                "fetched":    0,
+                "imported":   0,
+                "skipped":    existing_count,
+                "from_cache": True
+            })
+
+        result = get_bilibili_comments_by_keyword(
+            keyword=request.keyword,
+            max_videos=request.max_videos,
+            max_results_per_video=request.max_results_per_video
+        )
+
+        comments = result["comments"]
+        videos   = result["videos"]
+
+        if not comments:
+            return error("No valid comments found")
+
+        texts      = [c["content"] for c in comments]
+        sentiments = analyze_sentiments_batch(texts)
+
+        db_objects = [
+            Comment(
+                platform="bilibili",
+                video_id=comment["video_id"],
+                comment_id=comment["comment_id"],
+                topic=request.keyword,
+                content=comment["content"],
+                like_count=comment["like_count"],
+                reply_count=comment["reply_count"],
+                published_at=comment["published_at"],
+                sentiment=score,
+                sentiment_label=sentiment_label(score),
+                region=None,
+                language=None,
+            )
+            for comment, score in zip(comments, sentiments)
+        ]
+
+        imported = _upsert_comments(db, db_objects)
+        logger.info(f"bilibili keyword crawl done: keyword={request.keyword} fetched={len(db_objects)} imported={imported}")
+
+        return success({
+            "keyword":    request.keyword,
+            "videos":     videos,
+            "fetched":    len(db_objects),
+            "imported":   imported,
+            "skipped":    len(db_objects) - imported,
+            "from_cache": False
+        })
+
+    except Exception as e:
+        logger.error(f"bilibili keyword crawl error: {e}", exc_info=True)
         return error(str(e))
 
 
