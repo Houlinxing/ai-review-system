@@ -207,3 +207,12 @@
     opacity: 0.4;
   }
 }
+.platform-bili {
+  color: #fb7299;  /* B站粉色 */
+  font-weight: 600;
+}
+
+.platform-yt {
+  color: #ff0000;  /* YouTube红色 */
+  font-weight: 600;
+}

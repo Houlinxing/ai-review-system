@@ -9,7 +9,9 @@ export default function CommentsList({ comments }) {
           <div className="comment" key={comment.id}>
             <div className="comment-content">{comment.content}</div>
             <div className="comment-meta">
-              <span>{comment.platform}</span>
+              <span className={comment.platform === "bilibili" ? "platform-bili" : "platform-yt"}>
+                {comment.platform === "bilibili" ? "📺 B站" : "▶️ YouTube"}
+              </span>
               <span>{comment.sentiment_label}</span>
               <span className={comment.sentiment >= 0 ? "positive" : "negative"}>
                 {comment.sentiment?.toFixed(2)}

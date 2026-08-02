@@ -29,11 +29,19 @@ export default function App() {
     setComments([])
 
     try {
-      await axios.post(`${API}/crawl/youtube/keyword`, {
-        keyword: topic.trim(),
-        max_videos: 3,
-        max_results_per_video: 20,
-      })
+       await Promise.all([
+        axios.post(`${API}/crawl/youtube/keyword`, {
+          keyword: topic.trim(),
+          max_videos: 3,
+          max_results_per_video: 20,
+        }).catch(err => console.warn("YouTube抓取失败:", err)),
+
+        axios.post(`${API}/crawl/bilibili/keyword`, {
+          keyword: topic.trim(),
+          max_videos: 3,
+          max_results_per_video: 20,
+        }).catch(err => console.warn("B站抓取失败:", err)),
+      ])
 
       const [statsRes, commentsRes, summaryRes] = await Promise.all([
         axios.get(`${API}/stats/${topic.trim()}`),
