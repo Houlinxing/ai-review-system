@@ -57,31 +57,28 @@ export default function SentimentChart({ comments, topic, darkMode }) {
         {/* 饼图 */}
         <div className="card">
           <div className="section-title">Sentiment Ratio</div>
-          <div style={{ width: "100%", height: 260 }}>
+          <div style={{ width: "100%", height: 320 }}>
             <ResponsiveContainer>
-              <PieChart>
+              <PieChart margin={{ top: 30, right: 40, bottom: 30, left: 40 }}>
                 <Pie
                   data={buckets}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}   // 环形图，中间空心更现代
-                  outerRadius={100}
+                  innerRadius={50}
+                  outerRadius={75}
                   dataKey="value"
-                  label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
+                  label={false}   // 不在扇形上直接显示文字
                 >
                   {buckets.map((entry) => (
                     <Cell key={entry.name} fill={COLORS[entry.name]} />
                   ))}
                 </Pie>
+                <Legend />   {/* 改用图例显示在下方 */}
                 <Tooltip contentStyle={tooltipStyle} />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
-
       </div>
 
       {/* 第二行：趋势折线图 */}
