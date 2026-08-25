@@ -76,6 +76,7 @@ pytest tests/ -v
 ## Roadmap
 
 - [x] B站数据源
+- [x] 搜索记录
 - [ ] Reddit 数据源
 - [ ] 语言自动检测
 - [ ] Redis 缓存
