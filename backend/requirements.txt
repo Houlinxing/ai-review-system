@@ -64,7 +64,6 @@ sympy==1.13.1
 textblob==0.20.0
 tiktoken==0.13.0
 tokenizers==0.22.2
-torch==2.6.0+cu126
 tqdm==4.67.3
 transformers==5.13.0
 typer==0.26.8

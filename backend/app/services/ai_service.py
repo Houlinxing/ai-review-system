@@ -57,7 +57,7 @@ def generate_summary(comments: list[str], topic: str = "") -> dict:
 
     try:
         response = client.chat.completions.create(
-            model="minimaxai/minimax-m2.7",
+            model="minimaxai/minimax-m3",
             messages=[
                 {
                     "role": "system",
