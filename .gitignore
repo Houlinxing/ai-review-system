@@ -3,10 +3,17 @@ backend/venv/
 backend/app/__pycache__/
 backend/.env
 backend/.pytest_cache/
-backend/tests/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.env
+
+# Root
+.env
+
+# Docker本地构建产物（保留本地，不上传）
+backend/*.whl
+backend/hf_cache/
+
 *.pyc
